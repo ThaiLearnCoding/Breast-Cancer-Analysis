@@ -1,0 +1,574 @@
+---
+title: "main"
+output: html_document
+---
+
+# 1. TIEN XU LY SO LIEU
+
+## 1.1 Install library (if first run)
+
+```{r}
+# install.packages(c("questionr", "fastDummies", "psych", "ggplot2", "corrplot", "caret", "caTools", "pROC", "rpart", "rpart.plot")) 
+```
+
+## 1.2 Load library
+
+```{r}
+library(questionr)    # Used for freq.na, freq
+library(fastDummies)  # Used to create dummy variables
+library(psych)        # Used for the describe() function for descriptive statistics
+library(ggplot2)      # Used for plotting graphs
+library(corrplot)     # Used for plotting correlation matrix heatmaps
+```
+
+```{r}
+brc <- read.csv("./BRCA.csv")
+print("Initial data structure:")
+str(brc)
+```
+
+## 1.3 Replace empty cells ("") with NA (Not Available) values
+
+Check the percentage of NA (missing) values in each column
+
+```{r}
+brc[brc == ""] <- NA
+print("NA percentage per column before processing:")
+freq.na(brc)
+```
+
+### 1.3.2 Remove rows containing any NA values
+
+```{r}
+brc <- na.omit(brc)
+print("NA percentage per column after removing NA rows:")
+freq.na(brc) # Check again to ensure no NAs remain
+```
+
+### 1.3.3 Check if there are any duplicate rows based on Patient_ID
+
+(In this version, Patient_ID will be removed later, but the initial check is still useful)
+
+```{r}
+print("Are there duplicate Patient_IDs?")
+print(any(duplicated(brc$Patient_ID)))
+```
+
+## 1.4 View frequencies of some initial categorical variables (before removal/transformation)
+
+```{r}
+print("Frequency of Gender variable:")
+freq(brc$Gender)
+print("Frequency of ER.status variable:")
+freq(brc$ER.status)
+print("Frequency of PR.status variable:")
+freq(brc$PR.status)
+
+# freq(brc$Tumour_Stage) # Can view others if desired
+# freq(brc$Histology)
+# freq(brc$Surgery_type)
+# freq(brc$HER2.status)
+# freq(brc$Patient_Status)
+```
+
+## 1.5 Remove unnecessary columns or those with low variance / redundant information
+
+```{r}
+# ER.status and PR.status are often highly correlated, remove to avoid multicollinearity
+brc <- subset(brc, select = -ER.status)
+brc <- subset(brc, select = -PR.status)
+# Gender might not be informative or could be imbalanced
+brc <- subset(brc, select = -Gender)
+# Patient_ID is just an identifier, not used in modeling
+brc <- subset(brc, select = -Patient_ID)
+
+
+
+# dummy dataset use for TKMT
+dummy_dataset <- brc
+```
+
+## 1.6 Convert categorical variables to numeric format suitable for modeling
+
+```{r}
+# Patient_Status: "Dead" -> 0, "Alive" -> 1
+brc$Patient_Status <- match(brc$Patient_Status, c("Dead", "Alive"))
+brc$Patient_Status <- brc$Patient_Status - 1 # match returns 1, 2, so subtract 1 to get 0, 1
+
+# HER2.status: "Negative" -> 0, "Positive" -> 1
+brc$HER2.status <- match(brc$HER2.status, c("Negative", "Positive"))
+brc$HER2.status <- brc$HER2.status - 1 # match returns 1, 2, so subtract 1 to get 0, 1
+```
+
+## 1.7 Create dummy variables for the remaining categorical variables
+
+remove_first_dummy = TRUE: Removes the first dummy column to avoid perfect multicollinearity Example: If Tumor Stage has 3 values I, II, III, it will create 2 columns: Tumour_Stage_II, Tumour_Stage_III
+
+```{r}
+# A patient with Stage I will have a value of 0 in both these columns.
+brc <- dummy_cols(brc,
+                  select_columns = c("Tumour_Stage", "Histology", "Surgery_type"),
+                  remove_first_dummy = TRUE, # Remove the base level
+                  remove_selected_columns = TRUE) # Remove original columns after creating dummies
+str(brc)
+```
+
+## 1.8 Convert date columns to Date format
+
+```{r}
+brc$Date_of_Last_Visit <- as.Date(brc$Date_of_Last_Visit, format = "%d-%b-%y")
+brc$Date_of_Surgery <- as.Date(brc$Date_of_Surgery, format = "%d-%b-%y")
+```
+
+### 1.8.1Calculate the number of days between the last visit and surgery (follow-up/survival time)
+
+```{r}
+brc$Difference_Days <- as.numeric(brc$Date_of_Last_Visit - brc$Date_of_Surgery)
+```
+
+### 1.8.2 Remove the original date columns after calculating Difference_Days
+
+```{r}
+brc <- subset(brc, select = -Date_of_Surgery)
+brc <- subset(brc, select = -Date_of_Last_Visit)
+```
+
+## 1.9 Rename the dummy variable columns for brevity and clarity
+
+```{r}
+# Note: The exact column names depend on the unique values in your original data
+# Check column names with `colnames(brc)` if needed to ensure names match
+colnames(brc)[colnames(brc) == "Histology_Infiltrating Lobular Carcinoma"] <- "Histology_L"
+colnames(brc)[colnames(brc) == "Histology_Mucinous Carcinoma"] <- "Histology_M"
+
+colnames(brc)[colnames(brc) == "Surgery_type_Modified Radical Mastectomy"] <- "Surgery_type_M"
+colnames(brc)[colnames(brc) == "Surgery_type_Simple Mastectomy"] <- "Surgery_type_S"
+colnames(brc)[colnames(brc) == "Surgery_type_Other"] <- "Surgery_type_O"
+
+
+colnames(brc)[colnames(brc) == "Tumour_Stage_II"] <- "Tumour_Stage_II" # Keep as is or rename if desired
+colnames(brc)[colnames(brc) == "Tumour_Stage_III"] <- "Tumour_Stage_III" # Keep as is or rename if desired
+```
+
+## 1.10 Reorder columns for better readability (optional)
+
+-   Move the target variable (Patient_Status) to the end
+-   Get the list of current column names
+
+```{r}
+current_cols <- colnames(brc)
+# Identify columns other than Patient_Status
+other_cols <- current_cols[current_cols != "Patient_Status"]
+# Create the new column order
+new_col_order <- c(other_cols, "Patient_Status")
+# Apply the new column order
+brc <- brc[, new_col_order]
+```
+
+```{r}
+#print("Data structure after preprocessing:")
+str(brc)
+#print("View first 6 rows of preprocessed data:")
+head(brc)
+```
+
+
+# 2. THONG KE MO TA
+
+Using the preprocessed dataframe `brc`
+
+------------------------------------------------------------------------
+
+## 2.1. Descriptive statistics for continuous variables
+
+```{r}
+# 2.1. Descriptive statistics for continuous variables
+# 1. Lay cac cot can thiet
+continuous_vars <- c("Age", "Protein1", "Protein2", "Protein3", "Protein4", "Difference_Days")
+brc_continuous <- brc[, continuous_vars]
+
+# 2. Dinh nghia ham tinh toan thong ke
+calculate_custom_stats <- function(x) {
+  q <- quantile(x, probs = c(0.25, 0.75), na.rm = TRUE, type = 7)
+  stats <- c(
+    Mean = mean(x, na.rm = TRUE),
+    SD = sd(x, na.rm = TRUE),
+    Min = min(x, na.rm = TRUE),
+    Q1 = q[1],       
+    Median = median(x, na.rm = TRUE),
+    Q3 = q[2],       
+    Max = max(x, na.rm = TRUE)
+  )
+  return(stats)
+}
+
+# 3. Ap dung ham cho tung cot
+stats_list <- lapply(brc_continuous, calculate_custom_stats)
+
+# 4. Ket hop ket qua thanh bang
+summary_table <- do.call(rbind, stats_list)
+
+# 5. Chuyen thanh dataframe
+summary_df <- as.data.frame(summary_table)
+
+# 6. In ket qua
+print(round(summary_df, 3))
+```
+
+## 2.2. Frequency tables for remaining categorical variables
+
+```{r}
+# Table of HER2.status
+print(table(dummy_dataset$HER2.status))
+
+# Table of Tumour_Stage
+print(table(dummy_dataset$Tumour_Stage))
+
+# Table of Histology
+print(table(dummy_dataset$Histology))
+
+# Table of Surgery_type
+print(table(dummy_dataset$Surgery_type))
+
+# Table of Patient_Status
+print(table(dummy_dataset$Patient_Status))
+```
+
+## 2.3. Histograms for continuous variables by Patient Status
+
+```{r}
+print("--- Plotting Histograms ---")
+# Loop through continuous variables and plot histograms colored by Patient_Status
+for (v in continuous_vars) {
+  # Create clear labels for Patient_Status on the plot
+  plot_data <- brc
+  plot_data$Patient_Status_Label <- factor(plot_data$Patient_Status, levels = c(1, 0), labels = c("Alive", "Dead"))
+  
+  p <- ggplot(plot_data, aes_string(x = v, fill = "Patient_Status_Label")) +
+    # geom_histogram(binwidth = 1, alpha = 0.7, position = "identity") + # binwidth = 1 might be too small for some variables
+    geom_histogram(alpha = 0.7, position = "identity", bins = 20) + # Use number of bins instead of fixed binwidth
+    labs(title = paste("Histogram of", v, "by Patient Status"),
+         x = v,
+         y = "Frequency",
+         fill = "Patient Status") + # Set legend title
+    scale_fill_manual(values = c("Alive" = "darkgreen", "Dead" = "red")) + # Ensure colors match labels
+    theme_minimal() # Use a cleaner theme
+  print(p) # Display the plot
+}
+```
+
+## 2.4. Bar charts for categorical variables (only those still suitable)
+
+Since Tumour_Stage, Histology, Surgery_type are now dummies, the old grouped bar chart approach won't work. We can plot for HER2.status as it's still a single (0/1) column.
+
+```{r}
+print("--- Plotting Bar Charts for Categorical Variables ---")
+
+# Create a function to generate bar charts for categorical variables
+create_bar_chart <- function(data, var_name) {
+  # Convert Patient_Status to a factor with labels
+  data$Patient_Status_Label <- factor(data$Patient_Status, 
+                                      levels = c("Dead", "Alive"), 
+                                      labels = c("Dead", "Alive"))
+  
+  # Create the plot
+  p <- ggplot(data, aes_string(x = var_name, fill = "Patient_Status_Label")) +
+    geom_bar(position = "dodge") + # 'dodge' places bars side-by-side
+    labs(title = paste(var_name, "Distribution by Patient Status"),
+         x = var_name,
+         y = "Count",
+         fill = "Patient Status") +
+    scale_fill_manual(values = c("Alive" = "darkgreen", "Dead" = "red")) +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1)) # Rotate labels for better readability
+  
+  return(p)
+}
+
+# HER2.status bar chart (using dummy_dataset instead of brc)
+print("--- Plotting Bar Chart for HER2.status ---")
+p_her2 <- create_bar_chart(dummy_dataset, "HER2.status")
+print(p_her2)
+
+# Tumour_Stage bar chart
+print("--- Plotting Bar Chart for Tumour_Stage ---")
+p_stage <- create_bar_chart(dummy_dataset, "Tumour_Stage")
+print(p_stage)
+
+# Histology bar chart
+print("--- Plotting Bar Chart for Histology ---")
+p_histology <- create_bar_chart(dummy_dataset, "Histology")
+print(p_histology)
+
+# Surgery_type bar chart
+print("--- Plotting Bar Chart for Surgery_type ---")
+p_surgery <- create_bar_chart(dummy_dataset, "Surgery_type")
+print(p_surgery)
+```
+## 2.5. Boxplots for continuous variables by Patient Status
+
+```{r}
+print("--- Plotting Boxplots ---")
+# Loop through continuous variables and plot boxplots grouped by Patient_Status
+for (v in continuous_vars) {
+  plot_data <- brc
+  plot_data$Patient_Status_Label <- factor(plot_data$Patient_Status, levels = c(0, 1), labels = c("Dead", "Alive"))
+  
+  p <- ggplot(plot_data, aes_string(x = "Patient_Status_Label", y = v, fill = "Patient_Status_Label")) +
+    geom_boxplot(alpha = 0.7, outlier.colour = "red", outlier.shape = 1) + # Show outliers in red
+    labs(title = paste("Boxplot of", v, "by Patient Status"),
+         x = "Patient Status",
+         y = v) + # No fill legend needed as it's on the x-axis
+    scale_fill_manual(values = c("Alive" = "darkgreen", "Dead" = "red")) +
+    theme_minimal() +
+    theme(legend.position = "none") # Hide the legend
+  print(p)
+}
+```
+
+## 2.6. Correlation Matrix and Heatmap
+
+```{r}
+print("--- Calculating and Plotting Correlation Matrix ---")
+# Only calculate correlation between continuous variables
+cor_data <- brc[, continuous_vars]
+correlation_matrix <- cor(cor_data)
+
+print("Correlation Matrix:")
+print(round(correlation_matrix, 2)) # Round for better readability
+
+# Plot the correlation matrix heatmap
+print("Plotting correlation matrix heatmap...")
+corrplot(correlation_matrix,
+         method = "color",       # Display using colors
+         addCoef.col = "black",  # Show correlation coefficients in black
+         type = "upper",         # Show only the upper triangle of the matrix
+         order = "hclust",       # Reorder variables based on hierarchical clustering
+         tl.col = "black",       # Color of variable names (text labels)
+         tl.srt = 45,            # Rotation angle for text labels
+         diag = FALSE)           # Do not display the main diagonal
+title("Correlation Matrix Heatmap of Continuous Variables", line = 5) # Them vao bi che 
+```
+
+# 3. INFERENTIAL STATS
+
+## 3.1 Confidence Interval and Hypothesis testing for main features
+
+### 3.1.1 Death ratio
+
+#### 3.1.1.a Confidence Interval for ratio of death from the population
+```{r}
+num_patients    <- length(brc$Patient_Status)         # Total patients
+dead_patients   <- sum(brc$Patient_Status == 0)       # Total death cases
+f               <- dead_patients / num_patients
+z_alpha_2       <- qnorm(p= 0.05/2, lower.tail = F)
+Epsilon         <- z_alpha_2 * sqrt(f*(1-f)/num_patients)
+data.frame(num_patients, dead_patients, f, z_alpha_2, Epsilon, Left_CI = f - Epsilon, Right_CI = f + Epsilon)
+```
+
+
+
+#### 3.1.1.b Binomial Testing for one sample
+```{r}
+num_patients <- length(brc$Patient_Status)         # Total patients
+dead_patients <- sum(brc$Patient_Status == 0)       # Total death cases
+binom.test(dead_patients, num_patients, alternative = "less", p = 0.205)    # Test the ratio
+```
+
+### 3.1.2 Age groups
+#### 3.1.2.a Confidence Interval for mean of the age from the population
+```{r}
+t.test(brc$Age)$conf.int   
+```
+#### 3.1.2.b T-test for two sample
+```{r}
+t.test(Age ~ Patient_Status, data = dummy_dataset)
+```
+
+#### 3.1.2.c Chi Square Testing for independency between death ratio and age groups
+```{r}
+dummy_dataset$AgeGroup <- cut(dummy_dataset$Age,
+                          breaks = c(-Inf, 45, 75, Inf),
+                          labels = c("<45", "45-75", "75+"),
+                          right = FALSE)
+tbl <- table(dummy_dataset$AgeGroup, dummy_dataset$ Patient_Status)
+chisq.test(tbl)
+```
+
+```{r}
+# Visualizing data
+ggplot(dummy_dataset, aes(x = AgeGroup, fill = Patient_Status)) +
+  geom_bar(position = "fill") +
+  ylab("Ratio") +
+  ggtitle("Death ratio according to age groups")  +
+  scale_fill_manual(values = c("Dead" = "orangered", "Alive" = "darkcyan"))
+```
+
+
+### 3.1.3 Tumour Stage
+
+#### 3.1.2.a ANOVA for Age according to Tumour_Stage
+```{r}
+anova_result <- aov(Age ~ Tumour_Stage, data = dummy_dataset)
+summary(anova_result)
+```
+
+```{r}
+# As having the differences in pair groups
+# Focusing on the differences between each pairs
+# TukeyHSD(anova_result)    Uncomment to use it
+```
+
+
+```{r}
+pairwise.t.test(dummy_dataset$Age, dummy_dataset$Tumour_Stage,
+                p.adjust.method = "none") 
+```
+
+```{r}
+boxplot(Age ~ Tumour_Stage, data = dummy_dataset,
+        col = c("skyblue", "lightgreen", "lightpink"),
+        main = "Age distribution separated by Tumour Stages",
+        ylab = "Age",
+        xlab = "Tumour Stage")
+
+```
+#### 3.1.3.a Chi Square Testing for independency between death ratio and tumour stages
+
+```{r}
+tbl2 <- table(dummy_dataset$Tumour_Stage, dummy_dataset$Patient_Status)
+chisq.test(tbl2)
+```
+
+```{r}
+ggplot(dummy_dataset, aes(x = Tumour_Stage, fill = Patient_Status)) +
+  geom_bar(position = "fill") +
+  ylab("Ratio") +
+  ggtitle("Death ratio according to Tumour Stage") +
+ scale_fill_manual(values = c("Dead" = "orangered", "Alive" = "darkcyan"))
+```
+
+
+
+
+## 3.2 LOGISTIC REGRESSION
+### 3.2.1 Split dataset into train/test set
+
+```{r}
+library(caTools)
+set.seed(115)
+split <- sample.split(brc$Patient_Status, SplitRatio = 0.8)
+train_data <- subset(brc, split == TRUE)
+test_data  <- subset(brc, split == FALSE)
+freq(train_data$Patient_Status)
+freq(test_data$Patient_Status)
+```
+
+### 3.2.2 Train the logistic regression model
+
+```{r}
+full_model <- glm(
+  Patient_Status ~  Age + Protein1 + Protein2 + Protein3 + Protein4 + 
+                    HER2.status + Tumour_Stage_II + Tumour_Stage_III + 
+                    Histology_L + Histology_M + Surgery_type_M + Surgery_type_O + Surgery_type_S +
+                    Difference_Days,
+                  data = train_data, family = "binomial")
+summary(full_model)
+```
+
+### 3.2.3 Chọn mô hình tối ưu bằng step AIC
+
+```{r}
+step_model <- step(full_model)
+summary(step_model)
+```
+
+### 3.2.4 Evaluate by confusion matrix
+
+```{r}
+pred_prob <- predict(step_model, newdata = test_data, type = "response")
+pred_class <- ifelse(pred_prob > 0.5, 1, 0)
+test_data$pred_class <- factor(pred_class, levels = c(0, 1))
+test_data$Patient_Status <- factor(test_data$Patient_Status, levels = c(0, 1))
+library(caret)
+confusionMatrix(test_data$pred_class, test_data$Patient_Status, positive = "1")
+```
+
+### 3.2.5 Draw ROC for the model
+
+```{r}
+library(pROC)
+actual <- as.numeric(as.character(test_data$Patient_Status))
+roc_obj <- roc(actual, pred_prob)
+plot(roc_obj, col = "blue", main = "ROC Curve", legacy.axes = TRUE)
+auc(roc_obj)
+```
+....... THEM GIAI THICH .......
+
+
+
+
+## 3.3 DECISION TREE
+### 3.3.1 Split dataset into train/test set
+
+```{r}
+library(caTools)
+set.seed(115)
+split <- sample.split(brc$Patient_Status, SplitRatio = 0.8)
+train_data <- subset(brc, split == TRUE)
+test_data  <- subset(brc, split == FALSE)
+freq(train_data$Patient_Status)
+freq(test_data$Patient_Status)
+```
+
+### 3.3.2 Train the decision tree model and visualize
+
+```{r}
+library(rpart)
+library(rpart.plot)
+tree_model <- rpart(Patient_Status ~  Age + Protein1 + Protein2 + Protein3 + Protein4 + 
+                      HER2.status + Tumour_Stage_II + Tumour_Stage_III + 
+                      Histology_L + Histology_M + Surgery_type_M + Surgery_type_O + Surgery_type_S +
+                      Difference_Days,
+                   data = train_data,
+                   method = "class")
+summary(tree_model)
+rpart.plot(tree_model, extra = 106, fallen.leaves = TRUE)
+```
+
+### 3.3.3 Train the custom decision tree model using rpart.control and visualize
+
+```{r}
+custom_tree_model <- rpart(Patient_Status ~  Age + Protein1 + Protein2 + Protein3 + Protein4 + HER2.status + Tumour_Stage_II + Tumour_Stage_III + Histology_L + Histology_M + Surgery_type_M + Surgery_type_O + Surgery_type_S + Difference_Days,
+                    data = train_data,
+                    method = "class",
+                    control = rpart.control(
+                      minsplit = 10,    # Số lượng mẫu tối thiểu để chia nhánh
+                      minbucket = 5,    # Số lượng mẫu tối thiểu trong node lá
+                      cp = 0.01,        # Ngưỡng cải thiện
+                      maxdepth = 5      # Độ sâu tối đa
+                    ))
+summary(custom_tree_model)
+rpart.plot(custom_tree_model, extra = 106, fallen.leaves = TRUE)
+```
+
+### 3.3.4 Evaluate by confusion matrix
+
+```{r}
+library(caret)
+tree_pred_class <- predict(custom_tree_model, newdata = test_data, type = "class")
+test_data$tree_pred_class <- factor(tree_pred_class, levels = c(0, 1))
+test_data$Patient_Status <- factor(test_data$Patient_Status, levels = c(0, 1))
+confusionMatrix(test_data$tree_pred_class, test_data$Patient_Status, positive = "1")
+```
+
+### 3.3.5 Draw ROC for the model
+
+```{r}
+library(pROC)
+actual <- as.numeric(as.character(test_data$Patient_Status))
+tree_pred_prob <- predict(custom_tree_model, newdata = test_data, type = "prob")[,2] 
+roc_tree <- roc(actual, tree_pred_prob)
+plot(roc_tree, col = "darkgreen", lwd = 2, main = "ROC Curve - Decision Tree", legacy.axes = TRUE)
+auc(roc_tree)
+```
