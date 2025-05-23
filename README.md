@@ -7,7 +7,10 @@ In this report, we consider the status and effect of the disease on North Irelan
 We occured that the dataset is quite biased to certain group of woman, so it can lead to some unrealistic results in this region. Despite that, me and my team learned valuable skills like preprocessing data, making descriptive statistics report, doing statistical inferences, and choosing the appropriate model for evaluating and forcasting. 
 
 ## How to run
-Put file main.Rmd and BRCA.csv in the same folder in RStudio
+Put file main.Rmd and BRCA.csv in the same folder in RStudio.
+
 Before running, click your mouse on line 5. Then you just need to press the combination of Ctrl + Alt + N to run each batch of codes.
+
 To view the dataset, you can choose the play button on the environment section, which is on the top right of the RStudio. 
+
 The result will be display right after the code section, or on the terminal.
