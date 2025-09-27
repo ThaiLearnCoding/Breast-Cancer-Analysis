@@ -1,6 +1,6 @@
 # Breast-Cancer-Analysis 🔎
 
-## Description 
+## Description 📝
 ⚠️ Breast Cancer is serious disease for woman. According to some research, in 2022, there were 2.3 million women diagnosed with breast cancer and 670 000 deaths globally. This is nearly 30 percent of woman deaded after knowing that they are possitive with breast cancer.
 
 In this report, we consider the status and effect of the disease on North Ireland. The dataset is from Queen's University Belfast Cancer Research.
